@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DFDS — Raport Diferente Taxe Drum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --navy:   #0f1f3d;
+    --blue:   #1a3a6b;
+    --accent: #2d7dd2;
+    --toll:   #e8a020;
+    --green:  #2ecc71;
+    --red:    #e74c3c;
+    --bg:     #f0f4f8;
+    --panel:  #ffffff;
+    --text:   #1a2840;
+    --muted:  #6b7a99;
+    --border: #d0dae8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* HEADER */
+  #header {
+    background: var(--navy);
+    padding: 0 20px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .logo { font-family:'DM Mono',monospace; font-size:13px; font-weight:500; color:var(--accent); letter-spacing:0.08em; text-transform:uppercase; white-space:nowrap; }
+  .sep  { width:1px; height:24px; background:rgba(255,255,255,0.15); flex-shrink:0; }
+  .header-meta { font-size:11px; color:rgba(255,255,255,0.45); font-family:'DM Mono',monospace; white-space:nowrap; }
+  .route-label { font-size:13px; font-weight:500; color:white; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .driver-badge { background:rgba(45,125,210,0.25); border:1px solid rgba(45,125,210,0.4); color:#7ab3e8; font-size:11px; font-weight:500; padding:3px 10px; border-radius:20px; white-space:nowrap; }
+
+  /* NAV */
+  #nav {
+    background: var(--blue);
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-shrink: 0;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding: 0 16px;
+  }
+  .nav-btn {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: white;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    padding: 5px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .nav-btn:hover { background: rgba(255,255,255,0.2); }
+  .nav-btn:disabled { opacity: 0.3; cursor: default; }
+  #nav-counter { font-family:'DM Mono',monospace; font-size:12px; color:rgba(255,255,255,0.7); min-width:80px; text-align:center; }
+  #nav-planid  { font-family:'DM Mono',monospace; font-size:11px; color:rgba(255,255,255,0.45); }
+
+  /* MAIN */
+  #main { display:flex; flex:1; overflow:hidden; }
+
+  /* SIDEBAR */
+  #sidebar { width:290px; flex-shrink:0; background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow-y:auto; }
+  .sidebar-section { padding:14px 18px; border-bottom:1px solid var(--border); }
+  .sidebar-section:last-child { border-bottom:none; }
+  .section-label { font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); margin-bottom:10px; }
+
+  /* STATS */
+  .stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .stat-card { background:var(--bg); border-radius:8px; padding:10px 12px; border:1px solid var(--border); }
+  .stat-card.full { grid-column:1/-1; }
+  .stat-card.highlight { background:#fff8e6; border-color:#f0c060; }
+  .stat-value { font-family:'DM Mono',monospace; font-size:18px; font-weight:500; color:var(--text); line-height:1; }
+  .stat-card.highlight .stat-value { color:#b07000; }
+  .stat-label { font-size:10px; color:var(--muted); margin-top:3px; }
+
+  /* STOPS */
+  .stop-list { display:flex; flex-direction:column; }
+  .stop-item { display:flex; align-items:flex-start; gap:10px; position:relative; padding:7px 0; }
+  .stop-item:not(:last-child)::after { content:''; position:absolute; left:10px; top:26px; bottom:-7px; width:2px; background:var(--border); }
+  .stop-dot { width:22px; height:22px; border-radius:50%; border:2px solid var(--accent); background:white; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600; color:var(--accent); flex-shrink:0; z-index:1; }
+  .stop-item:first-child .stop-dot { background:var(--accent); color:white; }
+  .stop-item:last-child  .stop-dot { background:var(--navy); border-color:var(--navy); color:white; }
+  .stop-name   { font-size:12px; font-weight:500; padding-top:2px; }
+  .stop-coords { font-family:'DM Mono',monospace; font-size:10px; color:var(--muted); margin-top:1px; }
+
+  /* STATUS */
+  .status-badge { display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:20px; font-size:11px; font-weight:600; }
+  .status-ok   { background:#eafaf1; color:#1a8a45; border:1px solid #82e0aa; }
+  .status-warn { background:#fff8e6; color:#b07000; border:1px solid #f0c060; }
+  .status-err  { background:#fdf0f0; color:#c0392b; border:1px solid #f1948a; }
+  .status-dot  { width:6px; height:6px; border-radius:50%; background:currentColor; }
+
+  /* MAP */
+  #map-container { flex:1; position:relative; }
+  #map { width:100%; height:100%; }
+
+  /* LOADING */
+  #map-loading { position:absolute; inset:0; background:rgba(15,31,61,0.7); display:flex; align-items:center; justify-content:center; z-index:1000; color:white; font-size:13px; gap:10px; }
+  .spinner { width:28px; height:28px; border:3px solid rgba(255,255,255,0.2); border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite; flex-shrink:0; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  /* FOOTER */
+  #footer { height:30px; background:var(--navy); display:flex; align-items:center; padding:0 18px; gap:16px; flex-shrink:0; }
+  #footer span { font-size:10px; color:rgba(255,255,255,0.4); font-family:'DM Mono',monospace; }
+  #footer .f-accent { color:rgba(255,255,255,0.7); }
+</style>
+<script>
+window._ROUTES = [{
+"planId":"dclplan87893975",
+"driver":"Soiv 01",
+"cities":["Rotterdam","Bolsward","Almelo","Rotterdam"],
+"lats":[51.876765,53.05972,52.372901,51.876765],
+"lons":[4.430985,5.512322,6.646747,4.430985],
+"totalToll":93.31,
+"totalKm":534,
+"dfds":86.2,
+"dfdsKm":517
+},
+{
+"planId":"dclplan87900611",
+"driver":"Soiv 01",
+"cities":["Rotterdam","Wiesbaden","Alpen","Rotterdam"],
+"lats":[51.876765,50.040493,51.557826,51.876765],
+"lons":[4.430985,8.254829,6.529138,4.430985],
+"totalToll":262.14,
+"totalKm":882,
+"dfds":245.5,
+"dfdsKm":857
+},
+{
+"planId":"dclplan87900616",
+"driver":"Soiv 01",
+"cities":["Rotterdam","Wiesbaden","Genk","Rotterdam"],
+"lats":[51.876765,50.040493,50.987688,51.876765],
+"lons":[4.430985,8.254829,5.463115,4.430985],
+"totalToll":267.43,
+"totalKm":917,
+"dfds":243.51,
+"dfdsKm":895
+},
+{
+"planId":"dclplan87875144",
+"driver":"Soiv 02",
+"cities":["Rotterdam","Fulda","Rodgau","Rotterdam"],
+"lats":[51.876765,50.554698,49.990148,51.876765],
+"lons":[4.430985,9.593998,8.871321,4.430985],
+"totalToll":333.01,
+"totalKm":1113,
+"dfds":290.25,
+"dfdsKm":1056
+},
+{
+"planId":"dclplan87900610",
+"driver":"Soiv 02",
+"cities":["Rotterdam","Wiesbaden","Genk","Rotterdam"],
+"lats":[51.876765,50.040493,50.987688,51.876765],
+"lons":[4.430985,8.254829,5.463115,4.430985],
+"totalToll":267.43,
+"totalKm":917,
+"dfds":243.51,
+"dfdsKm":895
+},
+{
+"planId":"dclplan87915958",
+"driver":"Soiv 02",
+"cities":["Rotterdam","Helmond","Montfoort","Rotterdam"],
+"lats":[51.876765,51.46745,52.042997,51.876765],
+"lons":[4.430985,5.667476,4.93459,4.430985],
+"totalToll":53.11,
+"totalKm":301,
+"dfds":43.2,
+"dfdsKm":274
+},
+{
+"planId":"dclplan87917256",
+"driver":"Soiv 02",
+"cities":["Rotterdam","Tegelen","Deest","Rotterdam"],
+"lats":[51.876765,51.339621,51.890144,51.876765],
+"lons":[4.430985,6.148458,5.673449,4.430985],
+"totalToll":67.17,
+"totalKm":350,
+"dfds":59,
+"dfdsKm":334
+},
+{
+"planId":"dclplan87921451",
+"driver":"Soiv 02",
+"cities":["Rotterdam","Genk","Rotterdam"],
+"lats":[51.876765,50.987688,51.876765],
+"lons":[4.430985,5.463115,4.430985],
+"totalToll":87.85,
+"totalKm":362,
+"dfds":60.56,
+"dfdsKm":346
+},
+{
+"planId":"dclplan87907516",
+"driver":"Soiv 03",
+"cities":["Rotterdam","Huckelhoven","Brugge","Rotterdam"],
+"lats":[51.876765,51.034872,51.346416,51.876765],
+"lons":[4.430985,6.256358,3.174599,4.430985],
+"totalToll":173.99,
+"totalKm":645,
+"dfds":118.1,
+"dfdsKm":642
+},
+{
+"planId":"dclplan87900607",
+"driver":"Soiv 03",
+"cities":["Rotterdam","Wiesbaden","Genk","Rotterdam"],
+"lats":[51.876765,50.040493,50.987688,51.876765],
+"lons":[4.430985,8.254829,5.463115,4.430985],
+"totalToll":267.43,
+"totalKm":917,
+"dfds":243.51,
+"dfdsKm":895
+},
+{
+"planId":"dclplan87910733",
+"driver":"Soiv 03",
+"cities":["Rotterdam","Barneveld","Renkum","Rotterdam"],
+"lats":[51.876765,52.16428,51.968867,51.876765],
+"lons":[4.430985,5.591737,5.719996,4.430985],
+"totalToll":49.2,
+"totalKm":249,
+"dfds":43.4,
+"dfdsKm":241
+},
+{
+"planId":"dclplan87916239",
+"driver":"Soiv 03",
+"cities":["Rotterdam","Kerkrade","Genk","Rotterdam"],
+"lats":[51.876765,50.87169,50.987688,51.876765],
+"lons":[4.430985,6.033168,5.463115,4.430985],
+"totalToll":88.11,
+"totalKm":439,
+"dfds":76.88,
+"dfdsKm":429
+},
+{
+"planId":"dclplan87920480",
+"driver":"Soiv 03",
+"cities":["Rotterdam","Genk","Rotterdam"],
+"lats":[51.876765,50.987688,51.876765],
+"lons":[4.430985,5.463115,4.430985],
+"totalToll":87.85,
+"totalKm":362,
+"dfds":60.56,
+"dfdsKm":346
+},
+{
+"planId":"dclplan87892893",
+"driver":"Soiv 04",
+"cities":["Rotterdam","Marum","Huckelhoven","Rotterdam"],
+"lats":[51.876765,53.152292,51.034872,51.876765],
+"lons":[4.430985,6.267766,6.256358,4.430985],
+"totalToll":159.76,
+"totalKm":756,
+"dfds":150.1,
+"dfdsKm":742
+},
+{
+"planId":"dclplan87901675",
+"driver":"Soiv 04",
+"cities":["Rotterdam","Thannhausen","Mitterteich","Rotterdam"],
+"lats":[51.876765,48.28743,49.945348,51.876765],
+"lons":[4.430985,10.458188,12.229245,4.430985],
+"totalToll":575.63,
+"totalKm":1828,
+"dfds":554.03,
+"dfdsKm":1797
+},
+{
+"planId":"dclplan87916238",
+"driver":"Soiv 04",
+"cities":["Rotterdam","Kerkrade","Genk","Rotterdam"],
+"lats":[51.876765,50.87169,50.987688,51.876765],
+"lons":[4.430985,6.033168,5.463115,4.430985],
+"totalToll":88.11,
+"totalKm":439,
+"dfds":76.88,
+"dfdsKm":429
+},
+{
+"planId":"dclplan87892728",
+"driver":"Soiv 05",
+"cities":["Rotterdam","Fulda","Rodgau","Rotterdam"],
+"lats":[51.876765,50.554698,49.990148,51.876765],
+"lons":[4.430985,9.593998,8.871321,4.430985],
+"totalToll":333.01,
+"totalKm":1113,
+"dfds":290.25,
+"dfdsKm":1056
+},
+{
+"planId":"dclplan87901653",
+"driver":"Soiv 05",
+"cities":["Rotterdam","Kerkrade","Genk","Rotterdam"],
+"lats":[51.876765,50.87169,50.987688,51.876765],
+"lons":[4.430985,6.033168,5.463115,4.430985],
+"totalToll":88.11,
+"totalKm":439,
+"dfds":76.88,
+"dfdsKm":430
+},
+{
+"planId":"dclplan87900615",
+"driver":"Soiv 05",
+"cities":["Rotterdam","Wiesbaden","Genk","Rotterdam"],
+"lats":[51.876765,50.040493,50.987688,51.876765],
+"lons":[4.430985,8.254829,5.463115,4.430985],
+"totalToll":267.43,
+"totalKm":917,
+"dfds":243.51,
+"dfdsKm":895
+},
+{
+"planId":"dclplan87916235",
+"driver":"Soiv 05",
+"cities":["Rotterdam","Kerkrade","Venlo","Rotterdam"],
+"lats":[51.876765,50.87169,51.386159,51.876765],
+"lons":[4.430985,6.033168,6.15222,4.430985],
+"totalToll":82.71,
+"totalKm":461,
+"dfds":81.4,
+"dfdsKm":448
+},
+{
+"planId":"dclplan87900604",
+"driver":"Soiv 06",
+"cities":["Rotterdam","Wiesbaden","Genk","Rotterdam"],
+"lats":[51.876765,50.040493,50.987688,51.876765],
+"lons":[4.430985,8.254829,5.463115,4.430985],
+"totalToll":267.43,
+"totalKm":917,
+"dfds":243.51,
+"dfdsKm":895
+},
+{
+"planId":"dclplan87910353",
+"driver":"Soiv 06",
+"cities":["Rotterdam","Lokeren","Saterland","Rotterdam"],
+"lats":[51.876765,51.085029,53.106917,51.876765],
+"lons":[4.430985,3.998801,7.695776,4.430985],
+"totalToll":228.6,
+"totalKm":894,
+"dfds":170.74,
+"dfdsKm":872
+},
+{
+"planId":"dclplan87899390",
+"driver":"Soiv 07",
+"cities":["Rotterdam","Kerkrade","Genk","Rotterdam"],
+"lats":[51.876765,50.87169,50.987688,51.876765],
+"lons":[4.430985,6.033168,5.463115,4.430985],
+"totalToll":88.11,
+"totalKm":439,
+"dfds":76.88,
+"dfdsKm":429
+},
+{
+"planId":"dclplan87889909",
+"driver":"Soiv 07",
+"cities":["Rotterdam","Alzenau","Burstadt","Rotterdam"],
+"lats":[51.876765,50.050244,49.646376,51.876765],
+"lons":[4.430985,9.037699,8.466897,4.430985],
+"totalToll":311.36,
+"totalKm":1050,
+"dfds":297.2,
+"dfdsKm":1027
+},
+{
+"planId":"dclplan87906670",
+"driver":"Soiv 07",
+"cities":["Rotterdam","Molsheim","Strasbourg","Kirchberg","Weil am  Rhein","Rotterdam"],
+"lats":[51.876765,48.541305,48.567932,47.09316,47.59814,51.876765],
+"lons":[4.430985,7.531013,7.790082,7.572421,7.602344,4.430985],
+"totalToll":266.59,
+"totalKm":1603,
+"dfds":135.63,
+"dfdsKm":1574
+},
+{
+"planId":"dclplan87893744",
+"driver":"Soiv 08",
+"cities":["Rotterdam","Marum","Doetinchem","Rotterdam"],
+"lats":[51.876765,53.152292,51.971142,51.876765],
+"lons":[4.430985,6.267766,6.26874,4.430985],
+"totalToll":110.71,
+"totalKm":573,
+"dfds":79,
+"dfdsKm":546
+},
+{
+"planId":"dclplan87895474",
+"driver":"Soiv 08",
+"cities":["Rotterdam","Alzenau","Selters","Rotterdam"],
+"lats":[51.876765,50.050244,50.539016,51.876765],
+"lons":[4.430985,9.037699,7.759132,4.430985],
+"totalToll":284.01,
+"totalKm":981,
+"dfds":270.4,
+"dfdsKm":960
+},
+{
+"planId":"dclplan87916743",
+"driver":"Soiv 08",
+"cities":["Rotterdam","Barneveld","Renkum","Rotterdam"],
+"lats":[51.876765,52.16428,51.968867,51.876765],
+"lons":[4.430985,5.591737,5.719996,4.430985],
+"totalToll":49.2,
+"totalKm":249,
+"dfds":43.4,
+"dfdsKm":240
+},
+{
+"planId":"dclplan87905425",
+"driver":"Soiv 09",
+"cities":["Rotterdam","Oostende","Rotterdam"],
+"lats":[51.876765,51.211041,51.876765],
+"lons":[4.430985,2.957658,4.430985],
+"totalToll":141.6,
+"totalKm":427,
+"dfds":80.05,
+"dfdsKm":413
+},
+{
+"planId":"dclplan87900250",
+"driver":"Soiv 09",
+"cities":["Rotterdam","Brunssum","Genk","Rotterdam"],
+"lats":[51.876765,50.95809,50.987688,51.876765],
+"lons":[4.430985,5.992037,5.463115,4.430985],
+"totalToll":86.7,
+"totalKm":421,
+"dfds":70.48,
+"dfdsKm":412
+},
+{
+"planId":"dclplan87899402",
+"driver":"Soiv 09",
+"cities":["Rotterdam","Kerkrade","Genk","Rotterdam"],
+"lats":[51.876765,50.87169,50.987688,51.876765],
+"lons":[4.430985,6.033168,5.463115,4.430985],
+"totalToll":88.11,
+"totalKm":439,
+"dfds":76.88,
+"dfdsKm":429
+},
+{
+"planId":"dclplan87916179",
+"driver":"Soiv 09",
+"cities":["Rotterdam","Genk","Rotterdam"],
+"lats":[51.876765,50.987688,51.876765],
+"lons":[4.430985,5.463115,4.430985],
+"totalToll":87.85,
+"totalKm":362,
+"dfds":60.56,
+"dfdsKm":346
+},
+{
+"planId":"dclplan87920479",
+"driver":"Soiv 09",
+"cities":["Rotterdam","Genk","Rotterdam"],
+"lats":[51.876765,50.987688,51.876765],
+"lons":[4.430985,5.463115,4.430985],
+"totalToll":87.85,
+"totalKm":362,
+"dfds":60.56,
+"dfdsKm":346
+},
+{
+"planId":"dclplan87905421",
+"driver":"Soiv 10",
+"cities":["Rotterdam","Mouscron","Via  Rijsbergen","Rotterdam"],
+"lats":[51.876765,50.749797,51.486543,51.876765],
+"lons":[4.430985,3.249755,4.734435,4.430985],
+"totalToll":123.77,
+"totalKm":425,
+"dfds":79.94,
+"dfdsKm":415
+},
+{
+"planId":"dclplan87910789",
+"driver":"Soiv 10",
+"cities":["Rotterdam","Borculo","Rotterdam"],
+"lats":[51.876765,52.120067,51.876765],
+"lons":[4.430985,6.530219,4.430985],
+"totalToll":59.43,
+"totalKm":367,
+"dfds":52.4,
+"dfdsKm":351
+},
+{
+"planId":"dclplan87907604",
+"driver":"Soiv 10",
+"cities":["Rotterdam","Barneveld","Dortmund","Rotterdam"],
+"lats":[51.876765,52.16428,51.561691,51.876765],
+"lons":[4.430985,5.591737,7.431932,4.430985],
+"totalToll":135.62,
+"totalKm":537,
+"dfds":133.78,
+"dfdsKm":528
+},
+{
+"planId":"dclplan87911204",
+"driver":"Soiv 10",
+"cities":["Rotterdam","Veghel","Rotterdam"],
+"lats":[51.876765,51.618156,51.876765],
+"lons":[4.430985,5.51012,4.430985],
+"totalToll":33.74,
+"totalKm":203,
+"dfds":32.4,
+"dfdsKm":192
+},
+{
+"planId":"dclplan87899388",
+"driver":"Soiv 11",
+"cities":["Rotterdam","Kerkrade","Langenfeld (Rheinland)","Rotterdam"],
+"lats":[51.876765,50.87169,51.102492,51.876765],
+"lons":[4.430985,6.033168,6.942326,4.430985],
+"totalToll":127.27,
+"totalKm":560,
+"dfds":122.89,
+"dfdsKm":544
+},
+{
+"planId":"dclplan87910726",
+"driver":"Soiv 11",
+"cities":["Rotterdam","Hellevoetsluis","Rotterdam"],
+"lats":[51.876765,51.840154,51.876765],
+"lons":[4.430985,4.18198,4.430985],
+"totalToll":5.38,
+"totalKm":52,
+"dfds":3.2,
+"dfdsKm":43
+},
+{
+"planId":"dclplan87921158",
+"driver":"Soiv 11",
+"cities":["Rotterdam","Almelo","Rotterdam"],
+"lats":[51.876765,52.372901,51.876765],
+"lons":[4.430985,6.646747,4.430985],
+"totalToll":74.12,
+"totalKm":395,
+"dfds":71,
+"dfdsKm":388
+},
+{
+"planId":"dclplan87920478",
+"driver":"Soiv 11",
+"cities":["Rotterdam","Genk","Rotterdam"],
+"lats":[51.876765,50.987688,51.876765],
+"lons":[4.430985,5.463115,4.430985],
+"totalToll":87.85,
+"totalKm":362,
+"dfds":60.56,
+"dfdsKm":346
+},
+{
+"planId":"dclplan87899389",
+"driver":"Soiv 12",
+"cities":["Rotterdam","Kerkrade","Genk","Rotterdam"],
+"lats":[51.876765,50.87169,50.987688,51.876765],
+"lons":[4.430985,6.033168,5.463115,4.430985],
+"totalToll":88.11,
+"totalKm":439,
+"dfds":76.88,
+"dfdsKm":429
+},
+{
+"planId":"dclplan87904378",
+"driver":"Soiv 12",
+"cities":["Rotterdam","Lokeren","Saterland","Rotterdam"],
+"lats":[51.876765,51.085029,53.106917,51.876765],
+"lons":[4.430985,3.998801,7.695776,4.430985],
+"totalToll":228.6,
+"totalKm":894,
+"dfds":170.74,
+"dfdsKm":871
+},
+{
+"planId":"dclplan87900612",
+"driver":"Soiv 12",
+"cities":["Rotterdam","Wiesbaden","Malsch","Rotterdam"],
+"lats":[51.876765,50.040493,48.888687,51.876765],
+"lons":[4.430985,8.254829,8.303488,4.430985],
+"totalToll":346.57,
+"totalKm":1151,
+"dfds":332.01,
+"dfdsKm":1127
+},
+{
+"planId":"dclplan87899435",
+"driver":"Soiv 13",
+"cities":["Rotterdam","Haps","Deurne","Rotterdam"],
+"lats":[51.876765,51.696235,51.470042,51.876765],
+"lons":[4.430985,5.875311,5.724722,4.430985],
+"totalToll":51.71,
+"totalKm":296,
+"dfds":46.6,
+"dfdsKm":285
+},
+{
+"planId":"dclplan87900606",
+"driver":"Soiv 13",
+"cities":["Rotterdam","Wiesbaden","Genk","Rotterdam"],
+"lats":[51.876765,50.040493,50.987688,51.876765],
+"lons":[4.430985,8.254829,5.463115,4.430985],
+"totalToll":267.43,
+"totalKm":917,
+"dfds":243.51,
+"dfdsKm":895
+},
+{
+"planId":"dclplan87900349",
+"driver":"Soiv 13",
+"cities":["Rotterdam","Marum","Wallenhorst","Rotterdam"],
+"lats":[51.876765,53.152292,52.353266,51.876765],
+"lons":[4.430985,6.267766,7.996548,4.430985],
+"totalToll":150.83,
+"totalKm":716,
+"dfds":145.48,
+"dfdsKm":703
+},
+{
+"planId":"dclplan87912299",
+"driver":"Soiv 13",
+"cities":["Rotterdam","Bunde","Bad Fallingbostel","Rotterdam"],
+"lats":[51.876765,53.183086,52.85546,51.876765],
+"lons":[4.430985,7.2522,9.700265,4.430985],
+"totalToll":255.26,
+"totalKm":978,
+"dfds":219.07,
+"dfdsKm":939
+},
+{
+"planId":"dclplan87893867",
+"driver":"Soiv 14",
+"cities":["Rotterdam","Bunde","Lohne","Waalwijk","Rotterdam"],
+"lats":[51.876765,53.183086,52.676068,51.698636,51.876765],
+"lons":[4.430985,7.2522,8.226208,5.07326,4.430985],
+"totalToll":187.15,
+"totalKm":812,
+"dfds":162.96,
+"dfdsKm":773
+},
+{
+"planId":"dclplan87901677",
+"driver":"Soiv 14",
+"cities":["Rotterdam","Thannhausen","Malsch","Rotterdam"],
+"lats":[51.876765,48.28743,48.888687,51.876765],
+"lons":[4.430985,10.458188,8.303488,4.430985],
+"totalToll":460.4,
+"totalKm":1514,
+"dfds":446.5,
+"dfdsKm":1492
+},
+{
+"planId":"dclplan87920477",
+"driver":"Soiv 14",
+"cities":["Rotterdam","Genk","Rotterdam"],
+"lats":[51.876765,50.987688,51.876765],
+"lons":[4.430985,5.463115,4.430985],
+"totalToll":87.85,
+"totalKm":362,
+"dfds":60.56,
+"dfdsKm":346
+},
+{
+"planId":"dclplan87899381",
+"driver":"Soiv 15",
+"cities":["Rotterdam","Kerkrade","Genk","Rotterdam"],
+"lats":[51.876765,50.87169,50.987688,51.876765],
+"lons":[4.430985,6.033168,5.463115,4.430985],
+"totalToll":88.11,
+"totalKm":439,
+"dfds":76.88,
+"dfdsKm":429
+},
+{
+"planId":"dclplan87925293",
+"driver":"Soiv 15",
+"cities":["Rotterdam","Deest","Rotterdam"],
+"lats":[51.876765,51.890144,51.876765],
+"lons":[4.430985,5.673449,4.430985],
+"totalToll":38.01,
+"totalKm":201,
+"dfds":37.6,
+"dfdsKm":195
+},
+{
+"planId":"dclplan87908928",
+"driver":"Soiv 15",
+"cities":["Rotterdam","Heino","Dortmund","Rotterdam"],
+"lats":[51.876765,52.442416,51.561691,51.876765],
+"lons":[4.430985,6.229914,7.431932,4.430985],
+"totalToll":143.78,
+"totalKm":614,
+"dfds":139.13,
+"dfdsKm":599
+},
+{
+"planId":"dclplan87910835",
+"driver":"Soiv 15",
+"cities":["Rotterdam","Lelystad","Emmeloord","Rotterdam"],
+"lats":[51.876765,52.503095,52.713214,51.876765],
+"lons":[4.430985,5.444233,5.776007,4.430985],
+"totalToll":61.62,
+"totalKm":340,
+"dfds":61.2,
+"dfdsKm":331
+},
+{
+"planId":"dclplan87900605",
+"driver":"Soiv 16",
+"cities":["Rotterdam","Wiesbaden","Krefeld","Alpen"],
+"lats":[51.876765,50.040493,51.337148,51.557826],
+"lons":[4.430985,8.254829,6.671198,6.529138],
+"totalToll":220.24,
+"totalKm":709,
+"dfds":210.49,
+"dfdsKm":695
+}];
+window._META = {
+  selfbill: "045020290155260039",
+  totalRoutes: 56,
+  totalDiff: "2350.92"
+};
+</script>
+</head>
+<body>
+
+<div id="header">
+  <div class="logo">DFDS · Raport Diferente</div>
+  <div class="sep"></div>
+  <div class="header-meta" id="h-selfbill">—</div>
+  <div class="sep"></div>
+  <div class="route-label" id="h-route">—</div>
+  <div class="driver-badge" id="h-driver" style="display:none"></div>
+</div>
+
+<div id="nav">
+  <button class="nav-btn" id="btn-prev" onclick="navigate(-1)">&#8592; Anterior</button>
+  <span id="nav-counter">1 / 1</span>
+  <span id="nav-planid">—</span>
+  <button class="nav-btn" id="btn-next" onclick="navigate(+1)">Urmator &#8594;</button>
+</div>
+
+<div id="main">
+  <div id="sidebar">
+    <div class="sidebar-section">
+      <div class="section-label">Statistici Ruta</div>
+      <div class="stat-grid">
+        <div class="stat-card highlight full">
+          <div class="stat-value" id="s-toll">—</div>
+          <div class="stat-label">Taxe drum PTV (EUR)</div>
+        </div>
+        <div class="stat-card full" id="s-dfds-card" style="display:none">
+          <div class="stat-value" id="s-dfds" style="color:#2ecc71">—</div>
+          <div class="stat-label">Taxe drum DFDS facturate (EUR)</div>
+        </div>
+        <div class="stat-card full" id="s-diff-card" style="display:none">
+          <div class="stat-value" id="s-diff">—</div>
+          <div class="stat-label">Diferenta DFDS vs PTV (EUR)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="s-dist">—</div>
+          <div class="stat-label">KM calculat PTV</div>
+        </div>
+        <div class="stat-card" id="s-dfds-km-card" style="display:none">
+          <div class="stat-value" id="s-dfds-km">—</div>
+          <div class="stat-label">KM facturat DFDS</div>
+        </div>
+        <div class="stat-card full" id="s-diff-km-card" style="display:none">
+          <div class="stat-value" id="s-diff-km">—</div>
+          <div class="stat-label">Diferenta KM (DFDS vs PTV)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-section" id="status-section" style="display:none">
+      <div class="section-label">Status Verificare</div>
+      <div id="s-status"></div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">Opriri Ruta</div>
+      <div class="stop-list" id="stop-list"></div>
+    </div>
+  </div>
+
+  <div id="map-container">
+    <div id="map-loading"><div class="spinner"></div>Se incarca harta...</div>
+    <div id="map"></div>
+  </div>
+</div>
+
+<div id="footer">
+  <span>DFDS · Raport Diferente Taxe Drum</span>
+  <span>·</span>
+  <span class="f-accent" id="f-total"></span>
+  <span>·</span>
+  <span id="f-ts">—</span>
+</div>
+
+<script>
+// ── DATE INJECTATE DE VBA ──────────────────────────────────
+const ROUTES = window._ROUTES || [];
+const META   = window._META   || {};
+
+// ── STATE ──────────────────────────────────────────────────
+let currentIdx = 0;
+let map        = null;
+let routeLayerGroup = null;
+let markerLayerGroup = null;
+
+// ── INIT ───────────────────────────────────────────────────
+document.getElementById('h-selfbill').textContent = META.selfbill || '—';
+document.getElementById('f-total').textContent =
+  'Total diferente: ' + (META.totalDiff || '0') + ' EUR · ' + (META.totalRoutes || 0) + ' rute';
+document.getElementById('f-ts').textContent = new Date().toLocaleString('ro-RO');
+
+// Initializeaza harta o singura data
+map = L.map('map', {zoomControl: true}).setView([51.5, 8.0], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+routeLayerGroup  = L.layerGroup().addTo(map);
+markerLayerGroup = L.layerGroup().addTo(map);
+
+if (ROUTES.length > 0) {
+  showRoute(0);
+} else {
+  document.getElementById('map-loading').innerHTML = '<div style="text-align:center"><div style="font-size:32px">⚠️</div><div style="margin-top:8px">Nu exista rute de afisat.</div></div>';
+}
+
+// ── NAVIGARE ───────────────────────────────────────────────
+function navigate(dir) {
+  const newIdx = currentIdx + dir;
+  if (newIdx < 0 || newIdx >= ROUTES.length) return;
+  showRoute(newIdx);
+}
+
+// ── AFISEAZA RUTA ──────────────────────────────────────────
+function showRoute(idx) {
+  currentIdx = idx;
+  const r = ROUTES[idx];
+
+  // Nav buttons
+  document.getElementById('btn-prev').disabled = idx === 0;
+  document.getElementById('btn-next').disabled = idx === ROUTES.length - 1;
+  document.getElementById('nav-counter').textContent = (idx + 1) + ' / ' + ROUTES.length;
+  document.getElementById('nav-planid').textContent  = r.planId || '';
+
+  // Header
+  document.getElementById('h-route').textContent = r.cities.join(' \u2192 ');
+  const db = document.getElementById('h-driver');
+  if (r.driver) { db.textContent = r.driver; db.style.display = 'inline-flex'; }
+  else db.style.display = 'none';
+
+  // Statistici
+  document.getElementById('s-toll').textContent = r.totalToll > 0 ? r.totalToll.toFixed(2) + ' EUR' : '0.00 EUR';
+  document.getElementById('s-dist').textContent = r.totalKm > 0 ? r.totalKm + ' km' : '—';
+
+  if (r.dfds > 0) {
+    document.getElementById('s-dfds-card').style.display = '';
+    document.getElementById('s-dfds').textContent = r.dfds.toFixed(2) + ' EUR';
+  } else {
+    document.getElementById('s-dfds-card').style.display = 'none';
+  }
+
+  if (r.dfdsKm > 0) {
+    document.getElementById('s-dfds-km-card').style.display = '';
+    document.getElementById('s-dfds-km').textContent = r.dfdsKm + ' km';
+  } else {
+    document.getElementById('s-dfds-km-card').style.display = 'none';
+  }
+
+  if (r.dfds > 0 && r.totalToll > 0) {
+    const diff = r.dfds - r.totalToll;
+    document.getElementById('s-diff-card').style.display = '';
+    const de = document.getElementById('s-diff');
+    de.textContent = (diff >= 0 ? '+' : '') + diff.toFixed(2) + ' EUR';
+    de.style.color = Math.abs(diff) / r.dfds <= 0.05 ? '#1a8a45' : diff > 0 ? '#b07000' : '#c0392b';
+  } else {
+    document.getElementById('s-diff-card').style.display = 'none';
+  }
+
+  if (r.totalKm > 0 && r.dfdsKm > 0) {
+    const dkm = r.dfdsKm - r.totalKm;
+    document.getElementById('s-diff-km-card').style.display = '';
+    const dkmEl = document.getElementById('s-diff-km');
+    dkmEl.textContent = (dkm >= 0 ? '+' : '') + dkm + ' km';
+    dkmEl.style.color = Math.abs(dkm) <= r.dfdsKm * 0.1 ? '#1a8a45' : dkm > 0 ? '#b07000' : '#c0392b';
+  } else {
+    document.getElementById('s-diff-km-card').style.display = 'none';
+  }
+
+  // Status
+  const statusSection = document.getElementById('status-section');
+  if (r.dfds > 0 && r.totalToll > 0) {
+    const diff = r.dfds - r.totalToll;
+    const pct  = Math.abs(diff) / r.dfds;
+    let sh = '';
+    if (pct <= 0.05)   sh = '<div class="status-badge status-ok"><div class="status-dot"></div>OK \u2014 diferenta sub 5%</div>';
+    else if (diff > 0) sh = '<div class="status-badge status-warn"><div class="status-dot"></div>DFDS > PTV \u2014 verificare necesara</div>';
+    else               sh = '<div class="status-badge status-warn"><div class="status-dot"></div>PTV > DFDS \u2014 posibila subraportare</div>';
+    document.getElementById('s-status').innerHTML = sh;
+    statusSection.style.display = '';
+  } else {
+    statusSection.style.display = 'none';
+  }
+
+  // Lista opriri
+  const stopList = document.getElementById('stop-list');
+  stopList.innerHTML = '';
+  const mc = ['#2d7dd2','#e8a020','#2ecc71','#9b59b6','#e74c3c'];
+  for (let i = 0; i < r.cities.length; i++) {
+    const el = document.createElement('div');
+    el.className = 'stop-item';
+    const lat = r.lats[i] || 0, lon = r.lons[i] || 0;
+    el.innerHTML = '<div class="stop-dot">' + (i+1) + '</div><div>' +
+      '<div class="stop-name">' + r.cities[i] + '</div>' +
+      '<div class="stop-coords">' + lat.toFixed(4) + ', ' + lon.toFixed(4) + '</div>' +
+      '</div>';
+    stopList.appendChild(el);
+  }
+
+  // Harta
+  updateMap(r);
+}
+
+// ── HARTA ──────────────────────────────────────────────────
+function updateMap(r) {
+  routeLayerGroup.clearLayers();
+  markerLayerGroup.clearLayers();
+  document.getElementById('map-loading').style.display = 'flex';
+
+  const waypoints = r.lats.map((lat, i) => [lat, r.lons[i]]);
+  if (waypoints.length < 2) {
+    document.getElementById('map-loading').style.display = 'none';
+    return;
+  }
+
+  // Linii drepte placeholder
+  const shadow = L.polyline(waypoints, { color:'#000', weight:9, opacity:0.12, lineJoin:'round', lineCap:'round' });
+  const line   = L.polyline(waypoints, { color:'#e8500a', weight:5, opacity:1, lineJoin:'round', lineCap:'round' });
+  routeLayerGroup.addLayer(shadow);
+  routeLayerGroup.addLayer(line);
+  map.fitBounds(waypoints, {padding:[50,50]});
+
+  // Markeri
+  addMarkers(r);
+  document.getElementById('map-loading').style.display = 'none';
+
+  // OSRM traseu real
+  const coordsStr = r.lats.map((lat, i) => r.lons[i] + ',' + lat).join(';');
+  const osrmUrl = 'https://router.project-osrm.org/route/v1/driving/' + coordsStr +
+                  '?overview=full&geometries=geojson&steps=false';
+
+  fetch(osrmUrl)
+    .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+    .then(data => {
+      if (!data.routes || !data.routes[0]) return;
+      const roadCoords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+      routeLayerGroup.clearLayers();
+      routeLayerGroup.addLayer(L.polyline(roadCoords, { color:'#000', weight:9, opacity:0.12, lineJoin:'round', lineCap:'round' }));
+      routeLayerGroup.addLayer(L.polyline(roadCoords, { color:'#e8500a', weight:5, opacity:1, lineJoin:'round', lineCap:'round' }));
+      markerLayerGroup.clearLayers();
+      addMarkers(r);
+      map.fitBounds(roadCoords, {padding:[50,50]});
+    })
+    .catch(() => { /* raman liniile drepte */ });
+}
+
+function addMarkers(r) {
+  const mc = ['#2d7dd2','#e8a020','#2ecc71','#9b59b6','#e74c3c'];
+  for (let i = 0; i < r.cities.length; i++) {
+    const col = i === 0 ? '#2d7dd2' : i === r.cities.length-1 ? '#0f1f3d' : mc[i % mc.length];
+    const icon = L.divIcon({
+      className: '',
+      html: '<div style="background:' + col + ';color:white;border-radius:50%;width:28px;height:28px;' +
+            'display:flex;align-items:center;justify-content:center;font-family:monospace;' +
+            'font-size:11px;font-weight:600;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.5)">' + (i+1) + '</div>',
+      iconAnchor: [14, 14]
+    });
+    L.marker([r.lats[i], r.lons[i]], {icon, zIndexOffset:1000})
+      .addTo(markerLayerGroup)
+      .bindPopup('<b>' + r.cities[i] + '</b><br><small>' + r.lats[i].toFixed(5) + ', ' + r.lons[i].toFixed(5) + '</small>');
+  }
+}
+
+// Navigare cu tastatura
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft')  navigate(-1);
+  if (e.key === 'ArrowRight') navigate(+1);
+});
+</script>
+</body>
+</html>
+
+
